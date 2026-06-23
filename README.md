@@ -12,7 +12,7 @@ library (`@fluidx/localize-js`) from two manifests and running `pnpm install`
 rewrote **417 lockfile lines** — 134 unrelated packages gaining a
 `(supports-color@5.5.0)` suffix — that `pnpm dedupe` would not have produced.
 
-Reproduces with **stock `pnpm@11.8.0`** (no fork or patch required).
+Reproduces with the current **`pnpm@11.9.0`**.
 
 ---
 
@@ -92,7 +92,6 @@ node_modules/.pnpm/simple-git@3.36.0/node_modules/simple-git/package.json
 so it is where the optional peer is legitimately bound. `simple-git` is an
 **unrelated** `debug` consumer — its `debug` is **plain** in the committed lockfile.
 
-Requires `pnpm@11.8.0` (pinned via `packageManager`; run `corepack enable` once).
 `./scripts/reproduce.sh` runs these steps for you:
 
 **1. Remove the unrelated dependency** — delete the `"@repro/extra": "workspace:*"`
@@ -182,23 +181,14 @@ Same code path, same fix.
 
 ---
 
-## Relationship to other pnpm peer-suffix fixes
+## Practical consequence
 
-This is **distinct from** and **not fixed by**
-[pnpm #12179](https://github.com/pnpm/pnpm/pull/12179) /
-[#12514](https://github.com/pnpm/pnpm/pull/12514), which address *required*-peer
-suffix churn / `dedupe` completion-order races. This bug:
-
-- is **deterministic** (not a timing race),
-- is about an **optional** transitive peer,
-- is a genuine **`install` vs `dedupe` disagreement** (each is internally stable),
-- reproduces on stock `pnpm@11.8.0` **and** on a local build that already contains
-  #12514.
-
-The practical consequence for a monorepo: a committed `pnpm dedupe`-stable
-lockfile cannot be maintained with `pnpm install` alone — any manifest edit makes
-`install` re-propagate optional peers, and only a follow-up `pnpm dedupe` removes
-the churn.
+A committed `pnpm dedupe`-stable lockfile cannot be maintained with `pnpm install`
+alone: any manifest edit makes `install` re-propagate optional peers onto unrelated
+packages, and only a follow-up `pnpm dedupe` removes the churn. The drift is
+**deterministic** (not a timing race) and specific to **optional** peer dependencies
+— a genuine `install`-vs-`dedupe` disagreement, where each command is internally
+stable but the two produce different lockfiles from the same input.
 
 ---
 
@@ -218,4 +208,4 @@ the churn.
   needs, so it cannot be reproduced with a purely synthetic, link-only workspace.
 - `node_modules/` is git-ignored.
 - `PM="pd" ./scripts/reproduce.sh` runs the repro against a custom pnpm binary
-  (e.g. a local fork build) instead of the pinned `pnpm@11.8.0`.
+  (e.g. a different pnpm build) instead of the pinned `pnpm@11.9.0`.
