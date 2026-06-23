@@ -18,93 +18,43 @@ Reproduces with **stock `pnpm@11.8.0`** (no fork or patch required).
 
 ## Repro Steps
 
-### The workspace (2 packages, 3 real npm deps)
+The workspace is two packages with three real npm dependencies:
 
 ```
-packages/main/package.json
-    nodemon@3.1.0        PROVIDER  — deps BOTH supports-color@5.5.0 AND debug, so its
-                                     debug legitimately binds the optional peer and seeds
-                                     supports-color into the snapshot optionalDependencies blocks
-    simple-git@3.36.0    CONSUMER  — an innocent debug user; its debug (and its dep
-                                     @kwsites/file-exists) is PLAIN in the canonical lockfile
-    @repro/extra         TRIGGER   — workspace dep that is REMOVED to perturb the graph
-
-packages/extra/package.json
-    chalk@2.4.2          a SECOND supports-color@5.5.0 provider
+packages/main   →  nodemon@3.1.0   simple-git@3.36.0   @repro/extra
+packages/extra  →  chalk@2.4.2
 ```
 
-`canonical/pnpm-lock.yaml` is the committed, `pnpm dedupe`-stable reference; the
-working `pnpm-lock.yaml` starts equal to it.
+`nodemon` is the one package that pulls in both `supports-color@5.5.0` and `debug`,
+so it is where the optional peer is legitimately bound. `simple-git` is an
+**unrelated** `debug` consumer — its `debug` is **plain** in the committed lockfile.
 
-> **Real registry packages are required.** Workspace/`file:` packages are symlinked
-> singletons and never get the per-context peer-dependency *duplication* the bug
-> needs — so this cannot be reproduced with a purely synthetic, link-only workspace.
-> `nodemon`/`simple-git` are materialized per peer-context in the virtual store,
-> which is what lets the optional-peer suffix drift.
+Requires `pnpm@11.8.0` (pinned via `packageManager`; run `corepack enable` once).
+`./scripts/reproduce.sh` runs these steps for you:
 
-### Run it (from the repo root)
+**1. Remove the unrelated dependency** — delete the `"@repro/extra": "workspace:*"`
+line from `packages/main/package.json`.
 
-`./scripts/reproduce.sh` does everything below automatically. The manual steps,
-spelled out:
+**2. Install.** `simple-git` wrongly gains a `(supports-color@5.5.0)` suffix:
 
 ```bash
-# 0. Pin pnpm 11.8.0 (the repo's packageManager). Reproduces on stock pnpm — no fork needed.
-corepack enable
+pnpm install
+grep -c 'supports-color@5.5.0)' pnpm-lock.yaml   # was 4, now 8
+grep 'simple-git@3.36.0(' pnpm-lock.yaml         # simple-git@3.36.0(supports-color@5.5.0):
+```
 
-# 1. Start from the canonical, dedupe-stable lockfile.
-cp canonical/pnpm-lock.yaml pnpm-lock.yaml
+**3. Dedupe.** It removes the suffix `install` just added — proving it was spurious:
 
-# 2. BASELINE — a no-edit install changes nothing (the lockfile is a fixed point).
-pnpm install --lockfile-only
-diff canonical/pnpm-lock.yaml pnpm-lock.yaml && echo "0 churn"   # identical
-grep -c 'supports-color@5.5.0)' pnpm-lock.yaml                   # => 4
-
-# 3. THE EDIT — remove the @repro/extra workspace dependency from packages/main.
-#    By hand: delete the  "@repro/extra": "workspace:*"  line in packages/main/package.json
-#    …or run:
-( cd packages/main && npm pkg delete 'dependencies.@repro/extra' )
-
-# 4. pnpm INSTALL on (canonical + edit).
-cp canonical/pnpm-lock.yaml pnpm-lock.yaml
-pnpm install --lockfile-only
-grep -c 'supports-color@5.5.0)' pnpm-lock.yaml                   # => 8   <-- BUG (over-propagated)
-cp pnpm-lock.yaml /tmp/install.yaml                             # keep for the diff below
-
-# 5. pnpm DEDUPE on the SAME (canonical + edit) input. Reset the lockfile first!
-cp canonical/pnpm-lock.yaml pnpm-lock.yaml
+```bash
 pnpm dedupe
-grep -c 'supports-color@5.5.0)' pnpm-lock.yaml                   # => 4   <-- correct / minimal
-
-# 6. Restore the working tree when done.
-( cd packages/main && npm pkg set 'dependencies.@repro/extra=workspace:*' )
-cp canonical/pnpm-lock.yaml pnpm-lock.yaml
+grep -c 'supports-color@5.5.0)' pnpm-lock.yaml   # back to 4
+grep 'simple-git@3.36.0(' pnpm-lock.yaml         # (nothing — plain again)
 ```
 
-### What to look for (the bug)
-
-Step 4 (`install`) produces **8** `supports-color@5.5.0` suffix positions; step 5
-(`dedupe`) produces **4** — from the *same* edited input. The 4 extra are on
-`simple-git` and `@kwsites/file-exists`, which are **completely unrelated** to the
-removed `@repro/extra`. Diff the two lockfiles to see `install` spuriously
-suffixing them:
-
-```bash
-diff /tmp/install.yaml pnpm-lock.yaml      # install (left) vs dedupe (right)
-```
-
-```diff
--         version: 3.36.0(supports-color@5.5.0)     # install: simple-git suffixed
-+         version: 3.36.0                           # dedupe:  plain
--   '@kwsites/file-exists@1.1.1(supports-color@5.5.0)':
-+   '@kwsites/file-exists@1.1.1':
--   simple-git@3.36.0(supports-color@5.5.0):
-+   simple-git@3.36.0:
-```
-
-**The bug:** `install` and `dedupe` produce different lockfiles from identical
-input, and removing an unrelated dependency *adds* peer suffixes under `install`.
-Note the baseline (step 2): without the edit, `install` is a 0-churn fixed point —
-only the manifest edit exposes the disagreement, exactly the office-bohemia symptom.
+Removing `@repro/extra` has nothing to do with `simple-git`, yet `pnpm install`
+suffixes it and `pnpm dedupe` does not. That disagreement is the bug. (Without the
+edit, `pnpm install` changes nothing — the lockfile is a fixed point; only the edit
+triggers the drift, exactly the office-bohemia symptom.)
 
 ---
 
@@ -200,7 +150,9 @@ the churn.
 
 ## Notes
 
-- `node_modules/` is git-ignored; `--lockfile-only` is used so no packages are
-  linked.
+- **Real registry packages are required.** Workspace/`file:` packages are symlinked
+  singletons and never get the per-context peer-dependency *duplication* the bug
+  needs, so it cannot be reproduced with a purely synthetic, link-only workspace.
+- `node_modules/` is git-ignored.
 - `PM="pd" ./scripts/reproduce.sh` runs the repro against a custom pnpm binary
   (e.g. a local fork build) instead of the pinned `pnpm@11.8.0`.
