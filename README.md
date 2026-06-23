@@ -20,9 +20,72 @@ Reproduces with **stock `pnpm@11.8.0`** (no fork or patch required).
 
 The workspace is two packages with three real npm dependencies:
 
+packages/main/package.json
+
+```jsonc
+{
+  "name": "@repro/main",
+  "dependencies": {
+    "nodemon": "3.1.0",
+    "simple-git": "3.36.0",
+    "@repro/extra": "workspace:*"
+  }
+}
 ```
-packages/main   →  nodemon@3.1.0   simple-git@3.36.0   @repro/extra
-packages/extra  →  chalk@2.4.2
+
+packages/extra/package.json
+
+```jsonc
+{
+  "name": "@repro/extra",
+  "dependencies": {
+    "chalk": "2.4.2"
+  }
+}
+```
+
+node_modules/.pnpm/nodemon@3.1.0/node_modules/nodemon/package.json
+
+```jsonc
+{
+  "name": "nodemon",
+    "version": "3.1.0",
+  "dependencies": {
+    "debug": "^4",
+    "supports-color": "^5.5.0"
+    // ...
+  },
+  // ...
+}
+```
+
+node_modules/.pnpm/debug@4.4.3_supports-color@5.5.0/node_modules/debug/package.json
+
+```jsonc
+{
+  "name": "debug",
+  "version": "4.4.3",
+  "peerDependenciesMeta": {
+    "supports-color": {
+      "optional": true
+    }
+  },
+  // ...
+}
+```
+
+node_modules/.pnpm/simple-git@3.36.0/node_modules/simple-git/package.json
+
+```jsonc
+{
+  "name": "simple-git",
+  "version": "3.36.0",
+  "dependencies": {
+    "debug": "^4.4.0"
+    // ...
+  }
+  // ...
+}
 ```
 
 `nodemon` is the one package that pulls in both `supports-color@5.5.0` and `debug`,
