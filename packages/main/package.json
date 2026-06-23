@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@repro/extra": "workspace:*",
     "nodemon": "3.1.0",
-    "simple-git": "3.36.0",
-    "@repro/extra": "workspace:*"
+    "simple-git": "3.36.0"
   }
 }

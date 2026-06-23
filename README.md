@@ -16,95 +16,95 @@ Reproduces with **stock `pnpm@11.8.0`** (no fork or patch required).
 
 ---
 
-## TL;DR
+## Repro Steps
 
-| step (on the committed, `dedupe`-stable lockfile) | `supports-color@5.5.0` suffix positions |
-| --- | --- |
-| canonical / committed (produced by `pnpm dedupe`) | **4** |
-| no-edit `pnpm install` | 4 (0 churn — stable fixed point) |
-| **remove one workspace dep, then `pnpm install`** | **8** ← spurious over-propagation |
-| remove the same dep, then `pnpm dedupe` | **4** (correct, minimal) |
-
-`install` and `dedupe` disagree. The 4 extra suffix positions are on
-`simple-git` and `@kwsites/file-exists`, which have **nothing** to do with the
-removed dependency.
-
-```bash
-corepack enable      # so `pnpm` resolves to the pinned pnpm@11.8.0
-./scripts/reproduce.sh
-```
-
-Expected tail:
-
-```
-==> 3. RESULT
-    >>> BUG REPRODUCED: install (8) != dedupe (4)
-    >>> Packages that 'pnpm install' spuriously suffixed (absent from dedupe):
-               version: 3.36.0(supports-color@5.5.0)
-             '@kwsites/file-exists': 1.1.1(supports-color@5.5.0)
-         '@kwsites/file-exists@1.1.1(supports-color@5.5.0)':
-         simple-git@3.36.0(supports-color@5.5.0):
-```
-
----
-
-## The workspace
-
-Two workspace packages and three real npm dependencies:
+### The workspace (2 packages, 3 real npm deps)
 
 ```
 packages/main/package.json
-    nodemon@3.1.0        ← the supports-color@5.5.0 PROVIDER
-    simple-git@3.36.0    ← an innocent debug CONSUMER (plain in the canonical form)
-    @repro/extra         ← workspace dep that is REMOVED to trigger the bug
+    nodemon@3.1.0        PROVIDER  — deps BOTH supports-color@5.5.0 AND debug, so its
+                                     debug legitimately binds the optional peer and seeds
+                                     supports-color into the snapshot optionalDependencies blocks
+    simple-git@3.36.0    CONSUMER  — an innocent debug user; its debug (and its dep
+                                     @kwsites/file-exists) is PLAIN in the canonical lockfile
+    @repro/extra         TRIGGER   — workspace dep that is REMOVED to perturb the graph
 
 packages/extra/package.json
-    chalk@2.4.2          ← a SECOND supports-color@5.5.0 provider
+    chalk@2.4.2          a SECOND supports-color@5.5.0 provider
 ```
 
-Why each package matters:
+`canonical/pnpm-lock.yaml` is the committed, `pnpm dedupe`-stable reference; the
+working `pnpm-lock.yaml` starts equal to it.
 
-- **`nodemon@3.1.0`** depends on **both** `supports-color@5.5.0` *and* `debug`.
-  Because `supports-color` is a direct sibling of `debug` inside nodemon, nodemon's
-  `debug` legitimately binds the optional peer → `debug@4.4.3(supports-color@5.5.0)`.
-  This is what seeds `supports-color@5.5.0` into the lockfile, both as a package
-  and as a **bound optional peer** recorded in snapshot `optionalDependencies`
-  blocks.
-- **`simple-git@3.36.0`** (and its dep `@kwsites/file-exists`) are ordinary `debug`
-  consumers. In the canonical (`dedupe`) lockfile their `debug` is **plain** —
-  `supports-color` is *not* in their resolution context.
-- **`chalk@2.4.2`** (reached via `@repro/extra`) is a second provider of
-  `supports-color@5.5.0`. Removing `@repro/extra` is the graph perturbation.
+> **Real registry packages are required.** Workspace/`file:` packages are symlinked
+> singletons and never get the per-context peer-dependency *duplication* the bug
+> needs — so this cannot be reproduced with a purely synthetic, link-only workspace.
+> `nodemon`/`simple-git` are materialized per peer-context in the virtual store,
+> which is what lets the optional-peer suffix drift.
 
-> **Real npm packages are required.** Workspace/`file:` packages are symlinked
-> singletons, so they never get the per-context peer-dependency *duplication* that
-> the bug needs. Registry packages (`nodemon`, `simple-git`, …) are materialized
-> per peer-context in the virtual store, which is what makes the optional-peer
-> suffix able to drift. This is why the bug **cannot** be reproduced with a
-> purely synthetic, link-only workspace.
+### Run it (from the repo root)
 
----
+`./scripts/reproduce.sh` does everything below automatically. The manual steps,
+spelled out:
 
-## What the bug looks like
+```bash
+# 0. Pin pnpm 11.8.0 (the repo's packageManager). Reproduces on stock pnpm — no fork needed.
+corepack enable
 
-Removing `@repro/extra` (i.e. `chalk@2.4.2`) is unrelated to `simple-git`. Yet
-`pnpm install` adds a `(supports-color@5.5.0)` suffix to it, while `pnpm dedupe`
-on the identical input does not:
+# 1. Start from the canonical, dedupe-stable lockfile.
+cp canonical/pnpm-lock.yaml pnpm-lock.yaml
+
+# 2. BASELINE — a no-edit install changes nothing (the lockfile is a fixed point).
+pnpm install --lockfile-only
+diff canonical/pnpm-lock.yaml pnpm-lock.yaml && echo "0 churn"   # identical
+grep -c 'supports-color@5.5.0)' pnpm-lock.yaml                   # => 4
+
+# 3. THE EDIT — remove the @repro/extra workspace dependency from packages/main.
+#    By hand: delete the  "@repro/extra": "workspace:*"  line in packages/main/package.json
+#    …or run:
+( cd packages/main && npm pkg delete 'dependencies.@repro/extra' )
+
+# 4. pnpm INSTALL on (canonical + edit).
+cp canonical/pnpm-lock.yaml pnpm-lock.yaml
+pnpm install --lockfile-only
+grep -c 'supports-color@5.5.0)' pnpm-lock.yaml                   # => 8   <-- BUG (over-propagated)
+cp pnpm-lock.yaml /tmp/install.yaml                             # keep for the diff below
+
+# 5. pnpm DEDUPE on the SAME (canonical + edit) input. Reset the lockfile first!
+cp canonical/pnpm-lock.yaml pnpm-lock.yaml
+pnpm dedupe
+grep -c 'supports-color@5.5.0)' pnpm-lock.yaml                   # => 4   <-- correct / minimal
+
+# 6. Restore the working tree when done.
+( cd packages/main && npm pkg set 'dependencies.@repro/extra=workspace:*' )
+cp canonical/pnpm-lock.yaml pnpm-lock.yaml
+```
+
+### What to look for (the bug)
+
+Step 4 (`install`) produces **8** `supports-color@5.5.0` suffix positions; step 5
+(`dedupe`) produces **4** — from the *same* edited input. The 4 extra are on
+`simple-git` and `@kwsites/file-exists`, which are **completely unrelated** to the
+removed `@repro/extra`. Diff the two lockfiles to see `install` spuriously
+suffixing them:
+
+```bash
+diff /tmp/install.yaml pnpm-lock.yaml      # install (left) vs dedupe (right)
+```
 
 ```diff
-# pnpm-lock.yaml after `pnpm install` (left = dedupe/correct, right = install/buggy)
--         version: 3.36.0
-+         version: 3.36.0(supports-color@5.5.0)
--   '@kwsites/file-exists@1.1.1':
-+   '@kwsites/file-exists@1.1.1(supports-color@5.5.0)':
--   simple-git@3.36.0:
-+   simple-git@3.36.0(supports-color@5.5.0):
+-         version: 3.36.0(supports-color@5.5.0)     # install: simple-git suffixed
++         version: 3.36.0                           # dedupe:  plain
+-   '@kwsites/file-exists@1.1.1(supports-color@5.5.0)':
++   '@kwsites/file-exists@1.1.1':
+-   simple-git@3.36.0(supports-color@5.5.0):
++   simple-git@3.36.0:
 ```
 
-Both lockfiles are *install fixed points* (hysteresis): a no-edit `pnpm install`
-reproduces the committed lockfile with **0 churn**. Only a manifest edit forces
-the re-resolution that exposes the install-vs-dedupe disagreement — exactly the
-office-bohemia symptom.
+**The bug:** `install` and `dedupe` produce different lockfiles from identical
+input, and removing an unrelated dependency *adds* peer suffixes under `install`.
+Note the baseline (step 2): without the edit, `install` is a 0-churn fixed point —
+only the manifest edit exposes the disagreement, exactly the office-bohemia symptom.
 
 ---
 
