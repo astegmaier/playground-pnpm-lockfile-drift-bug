@@ -49,7 +49,7 @@ node_modules/.pnpm/nodemon@3.1.0/node_modules/nodemon/package.json
 ```jsonc
 {
   "name": "nodemon",
-    "version": "3.1.0",
+  "version": "3.1.0",
   "dependencies": {
     "debug": "^4",
     "supports-color": "^5.5.0"
