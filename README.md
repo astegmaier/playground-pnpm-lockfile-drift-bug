@@ -7,8 +7,8 @@ A **minimal, deterministic** reproduction of a pnpm bug where `pnpm install` and
 `debug`) onto packages that are completely unrelated to the edit.
 
 This is the small-scale, faithful version of the lockfile churn seen in the
-[office-bohemia](../office-bohemia4) monorepo, where removing a single internal
-library (`@fluidx/localize-js`) from two manifests and running `pnpm install`
+a large monorepo at Microsoft, where removing a single internal
+library from two manifests and running `pnpm install`
 rewrote **417 lockfile lines** — 134 unrelated packages gaining a
 `(supports-color@5.5.0)` suffix — that `pnpm dedupe` would not have produced.
 
