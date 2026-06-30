@@ -31,105 +31,30 @@ flowchart TD
   dbg -. "peer (optional)" .-> sc
 ```
 
-The exact manifests:
-
-#### `pnpm-workspace.yaml`
+The lockfile produced for this monorepo by the initial `pnpm install` will have a snapshot for `agent-base` that looks like this:
 
 ```yaml
-packages:
-  - 'a'
-  - 'b'
-```
-
-#### `a/package.json`
-
-```json
-{
-  "name": "a",
-  "dependencies": {
-    "b": "workspace:*",
-    "agent-base": "6.0.2",
-    "tiny-invariant": "1.3.3"
-  }
-}
-```
-
-#### `b/package.json`
-
-A self-documenting local package whose only job is to put `debug` and `supports-color` side by side, so `debug` binds the optional peer one level below `a`:
-
-```json
-{
-  "name": "b",
-  "dependencies": {
-    "debug": "4.4.3",
-    "supports-color": "5.5.0"
-  }
-}
-```
-
-#### The relevant real-package relationship
-
-`debug` declares `supports-color` as an **optional** peer:
-
-```json
-{
-  "name": "debug",
-  "peerDependencies": { "supports-color": "*" },
-  "peerDependenciesMeta": { "supports-color": { "optional": true } }
-}
-```
-
-`supports-color@5.5.0` is provided in the graph by the local `b` package, which depends on **both** `debug` and `supports-color@5.5.0`, so its `debug` legitimately binds the optional peer (`debug@4.4.3(supports-color@5.5.0)`).
-
-`agent-base@6.0.2` is an ordinary `debug` consumer (it depends on *nothing but* `debug`), completely unrelated to `tiny-invariant`. `tiny-invariant@1.3.3` is a dependency-free package with no relationship to `debug` or `supports-color`.
-
-#### Steps
-
-The committed `pnpm-lock.yaml` is `pnpm dedupe`-stable. Then:
-
-1. `pnpm install` — no change (the lockfile is a fixed point; `agent-base` is plain).
-2. Remove the `"tiny-invariant": "1.3.3"` line from `a/package.json`.
-3. `pnpm install` — `agent-base` (unrelated to the edit) **gains** a `(supports-color@5.5.0)` suffix.
-4. `pnpm dedupe` — the suffix is **removed** again.
-
-(`./scripts/reproduce.sh` in the repo runs steps 1–4 automatically.)
-
-#### Actual `pnpm-lock.yaml` (after step 3, `pnpm install`)
-
-```yaml
-importers:
-  a:
-    dependencies:
-      agent-base:
-        specifier: 6.0.2
-        version: 6.0.2(supports-color@5.5.0)   # <-- install added the optional-peer suffix
-
-snapshots:
-  agent-base@6.0.2(supports-color@5.5.0):      # <-- and a second, suffixed snapshot
-    dependencies:
-      debug: 4.4.3(supports-color@5.5.0)
-    transitivePeerDependencies:
-      - supports-color
-```
-
-#### Expected `pnpm-lock.yaml` (what `pnpm dedupe` produces from the same input — step 4)
-
-```yaml
-importers:
-  a:
-    dependencies:
-      agent-base:
-        specifier: 6.0.2
-        version: 6.0.2
-
-snapshots:
   agent-base@6.0.2:
     dependencies:
       debug: 4.4.3(supports-color@5.5.0)
     transitivePeerDependencies:
       - supports-color
 ```
+
+#### Steps
+
+1. Remove the `"tiny-invariant": "1.3.3"` dependency from `a/package.json`.
+2. Run `pnpm install` . Now the lockfile snapshot for `agent-base` has a **peer suffix**:
+
+    ```yaml
+      agent-base@6.0.2(supports-color@5.5.0): ## <-- BUG: the peer suffix is incorrectly added
+        dependencies:
+          debug: 4.4.3(supports-color@5.5.0)
+        transitivePeerDependencies:
+          - supports-color
+    ```
+
+3. `pnpm dedupe` — the suffix is (correctly) **removed** again.
 
 ### Describe the Bug
 
