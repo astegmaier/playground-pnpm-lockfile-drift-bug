@@ -18,7 +18,20 @@ https://github.com/astegmaier/playground-pnpm-lockfile-drift-bug
 
 ### Reproduction steps
 
-A tiny pnpm workspace with two packages, `a` and `b` (the root `package.json` is empty).
+A tiny pnpm workspace with two packages, `a` and `b` (the root `package.json` is empty). Every `dependencies` / `peerDependencies` edge between the packages — solid arrows are `dependencies` (labelled with the version range), the dashed arrow is `debug`'s **optional** `supports-color` peer:
+
+```mermaid
+flowchart TD
+  a -->|"workspace:*"| b
+  a -->|"6.0.2"| ab["agent-base"]
+  a -->|"1.3.3"| ti["tiny-invariant"]
+  b -->|"4.4.3"| dbg["debug"]
+  b -->|"5.5.0"| sc["supports-color"]
+  ab -->|"4"| dbg
+  dbg -. "peer (optional)" .-> sc
+```
+
+The exact manifests:
 
 #### `pnpm-workspace.yaml`
 

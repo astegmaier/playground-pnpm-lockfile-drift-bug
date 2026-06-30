@@ -19,70 +19,23 @@ Reproduces with the current **`pnpm@11.9.0`**.
 ## Repro Steps
 
 The project is a tiny pnpm workspace with two packages, `a` and `b` (the root
-`package.json` is empty). Package `a` depends on one real npm package
-(`agent-base`, the *victim*), the local `b` package (the *binder*), and a
-dependency-free trigger (`tiny-invariant`):
+`package.json` is empty). The graph below shows every `dependencies` /
+`peerDependencies` edge between them — see `a/package.json` and `b/package.json`
+for the exact manifests:
 
-a/package.json
-
-```jsonc
-{
-  "name": "a",
-  "dependencies": {
-    "b": "workspace:*",
-    "agent-base": "6.0.2",
-    "tiny-invariant": "1.3.3"
-  }
-}
+```mermaid
+flowchart TD
+  a -->|"workspace:*"| b
+  a -->|"6.0.2"| ab["agent-base"]
+  a -->|"1.3.3"| ti["tiny-invariant"]
+  b -->|"4.4.3"| dbg["debug"]
+  b -->|"5.5.0"| sc["supports-color"]
+  ab -->|"4"| dbg
+  dbg -. "peer (optional)" .-> sc
 ```
 
-b/package.json — a self-documenting local package whose only job is to put `debug`
-and `supports-color` side by side, so `debug` binds the optional peer
-(`debug@4.4.3(supports-color@5.5.0)`) one level below `a`:
-
-```jsonc
-{
-  "name": "b",
-  "dependencies": {
-    "debug": "4.4.3",
-    "supports-color": "5.5.0"
-  }
-}
-```
-
-node_modules/.pnpm/debug@4.4.3_supports-color@5.5.0/node_modules/debug/package.json
-— `debug` declares `supports-color` as an **optional** peer:
-
-```jsonc
-{
-  "name": "debug",
-  "version": "4.4.3",
-  "peerDependenciesMeta": {
-    "supports-color": {
-      "optional": true
-    }
-  },
-  // ...
-}
-```
-
-node_modules/.pnpm/agent-base@6.0.2/node_modules/agent-base/package.json — the
-**victim**, an unrelated `debug` consumer that depends on *nothing but* `debug`:
-
-```jsonc
-{
-  "name": "agent-base",
-  "version": "6.0.2",
-  "dependencies": {
-    "debug": "4"
-  }
-}
-```
-
-`b` is where the optional peer is legitimately bound (it has both `debug` and
-`supports-color`). `agent-base` is an **unrelated** `debug` consumer — its `debug`
-is **plain** (the peer stays absorbed as a `transitivePeerDependency`) in the
-committed lockfile.
+Solid arrows are `dependencies` (labelled with the version range); the dashed
+arrow is `debug`'s **optional** `supports-color` peer.
 
 `./scripts/reproduce.sh` runs these steps for you:
 
