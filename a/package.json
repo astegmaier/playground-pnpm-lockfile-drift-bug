@@ -1,0 +1,9 @@
+{
+  "name": "a",
+  "private": true,
+  "dependencies": {
+    "b": "workspace:*",
+    "agent-base": "6.0.2",
+    "tiny-invariant": "1.3.3"
+  }
+}

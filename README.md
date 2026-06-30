@@ -18,37 +18,40 @@ Reproduces with the current **`pnpm@11.9.0`**.
 
 ## Repro Steps
 
-The project is a single package with three real npm dependencies:
+The project is a tiny pnpm workspace with two packages, `a` and `b` (the root
+`package.json` is empty). Package `a` depends on one real npm package
+(`agent-base`, the *victim*), the local `b` package (the *binder*), and a
+dependency-free trigger (`tiny-invariant`):
 
-package.json
+a/package.json
 
 ```jsonc
 {
-  "name": "playground-pnpm-lockfile-drift-bug",
+  "name": "a",
   "dependencies": {
-    "nodemon": "3.1.0",
-    "simple-git": "3.36.0",
+    "b": "workspace:*",
+    "agent-base": "6.0.2",
     "tiny-invariant": "1.3.3"
   }
 }
 ```
 
-node_modules/.pnpm/nodemon@3.1.0/node_modules/nodemon/package.json
+b/package.json — a self-documenting local package whose only job is to put `debug`
+and `supports-color` side by side, so `debug` binds the optional peer
+(`debug@4.4.3(supports-color@5.5.0)`) one level below `a`:
 
 ```jsonc
 {
-  "name": "nodemon",
-  "version": "3.1.0",
+  "name": "b",
   "dependencies": {
-    "debug": "^4",
-    "supports-color": "^5.5.0"
-    // ...
-  },
-  // ...
+    "debug": "4.4.3",
+    "supports-color": "5.5.0"
+  }
 }
 ```
 
 node_modules/.pnpm/debug@4.4.3_supports-color@5.5.0/node_modules/debug/package.json
+— `debug` declares `supports-color` as an **optional** peer:
 
 ```jsonc
 {
@@ -63,46 +66,46 @@ node_modules/.pnpm/debug@4.4.3_supports-color@5.5.0/node_modules/debug/package.j
 }
 ```
 
-node_modules/.pnpm/simple-git@3.36.0/node_modules/simple-git/package.json
+node_modules/.pnpm/agent-base@6.0.2/node_modules/agent-base/package.json — the
+**victim**, an unrelated `debug` consumer that depends on *nothing but* `debug`:
 
 ```jsonc
 {
-  "name": "simple-git",
-  "version": "3.36.0",
+  "name": "agent-base",
+  "version": "6.0.2",
   "dependencies": {
-    "debug": "^4.4.0"
-    // ...
+    "debug": "4"
   }
-  // ...
 }
 ```
 
-`nodemon` is the one package that pulls in both `supports-color@5.5.0` and `debug`,
-so it is where the optional peer is legitimately bound. `simple-git` is an
-**unrelated** `debug` consumer — its `debug` is **plain** in the committed lockfile.
+`b` is where the optional peer is legitimately bound (it has both `debug` and
+`supports-color`). `agent-base` is an **unrelated** `debug` consumer — its `debug`
+is **plain** (the peer stays absorbed as a `transitivePeerDependency`) in the
+committed lockfile.
 
 `./scripts/reproduce.sh` runs these steps for you:
 
 **1. Remove the unrelated dependency** — delete the `"tiny-invariant": "1.3.3"`
-line from `package.json`.
+line from `a/package.json`.
 
-**2. Install.** `simple-git` wrongly gains a `(supports-color@5.5.0)` suffix:
+**2. Install.** `agent-base` wrongly gains a `(supports-color@5.5.0)` suffix:
 
 ```bash
 pnpm install
-grep -c 'supports-color@5.5.0)' pnpm-lock.yaml   # was 4, now 8
-grep 'simple-git@3.36.0(' pnpm-lock.yaml         # simple-git@3.36.0(supports-color@5.5.0):
+grep -c 'supports-color@5.5.0)' pnpm-lock.yaml   # was 3, now 5
+grep 'agent-base@6.0.2(' pnpm-lock.yaml          # agent-base@6.0.2(supports-color@5.5.0):
 ```
 
 **3. Dedupe.** It removes the suffix `install` just added — proving it was spurious:
 
 ```bash
 pnpm dedupe
-grep -c 'supports-color@5.5.0)' pnpm-lock.yaml   # back to 4
-grep 'simple-git@3.36.0(' pnpm-lock.yaml         # (nothing — plain again)
+grep -c 'supports-color@5.5.0)' pnpm-lock.yaml   # back to 3
+grep 'agent-base@6.0.2(' pnpm-lock.yaml          # (nothing — plain again)
 ```
 
-Removing `tiny-invariant` has nothing to do with `simple-git`, yet `pnpm install`
+Removing `tiny-invariant` has nothing to do with `agent-base`, yet `pnpm install`
 suffixes it and `pnpm dedupe` does not. That disagreement is the bug. (Without the
 edit, `pnpm install` changes nothing — the lockfile is a fixed point; only the edit
 triggers the drift, exactly the office-bohemia symptom.)
@@ -134,8 +137,8 @@ The two relevant pieces of pnpm source (paths relative to the pnpm repo,
 
    The preserved `optionalDependencies` (the bound `supports-color`) make the
    provider visible to additional `debug` occurrences during the re-resolution,
-   so they bind the optional peer too → the suffix propagates up to their
-   ancestors (`simple-git`, `@kwsites/file-exists`, and in office-bohemia
+   so they bind the optional peer too → the suffix propagates onto unrelated
+   `debug` consumers (`agent-base` here, and in office-bohemia
    `jest-environment-jsdom`, `jsdom`, `webpack-dev-server`, `madge`, `spdy`, …).
 
 2. **`deps-installer/src/install/index.ts`** — `pnpm dedupe` sets `dedupe: true`,
@@ -161,9 +164,9 @@ collapses the drift exactly:
 
 | run (canonical + edit) | suffix positions |
 | --- | --- |
-| `pnpm install` | **8** |
-| `pnpm install` with `currentResolvedDependencies` forced `undefined` | **4** |
-| `pnpm dedupe` | 4 |
+| `pnpm install` | **5** |
+| `pnpm install` with `currentResolvedDependencies` forced `undefined` | **3** |
+| `pnpm dedupe` | 3 |
 
 The identical experiment in office-bohemia gives **200 → 66** (and `dedupe` → 66).
 Same code path, same fix.
@@ -185,16 +188,19 @@ stable but the two produce different lockfiles from the same input.
 
 | path | purpose |
 | --- | --- |
-| `package.json` | the single-package manifest (three real deps) |
+| `a`, `b` | the two workspace packages — `a` (victim + trigger) and `b` (the `debug`+`supports-color` binder); the root `package.json` is empty |
 | `canonical/pnpm-lock.yaml` | the committed, `dedupe`-stable reference lockfile |
 | `pnpm-lock.yaml` | working copy (kept equal to the canonical reference) |
 | `scripts/reproduce.sh` | runs the install-vs-dedupe comparison end to end |
 
 ## Notes
 
-- **Real registry packages are required.** Workspace/`file:` packages are symlinked
-  singletons and never get the per-context peer-dependency *duplication* the bug
-  needs, so it cannot be reproduced with a purely synthetic, link-only workspace.
+- **The victim must be a real registry package.** The bug duplicates the victim's
+  snapshot (`agent-base@6.0.2` → `agent-base@6.0.2(supports-color@5.5.0)`); workspace
+  importers are symlinked singletons and never get that per-context peer suffix. The
+  **binder**, however, *can* be a local workspace package — its only job is to nest
+  `debug`+`supports-color` so the bound `debug@4.4.3(supports-color@5.5.0)` snapshot
+  exists (that snapshot is a registry-package snapshot regardless of its parent).
 - `node_modules/` is git-ignored.
 - `PM="pd" ./scripts/reproduce.sh` runs the repro against a custom pnpm binary
   (e.g. a different pnpm build) instead of the pinned `pnpm@11.9.0`.

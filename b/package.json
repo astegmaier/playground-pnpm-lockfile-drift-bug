@@ -1,0 +1,8 @@
+{
+  "name": "b",
+  "private": true,
+  "dependencies": {
+    "debug": "4.4.3",
+    "supports-color": "5.5.0"
+  }
+}
