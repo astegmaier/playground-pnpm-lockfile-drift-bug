@@ -1,7 +1,7 @@
 # pnpm `install`-vs-`dedupe` optional-peer lockfile drift
 
 A **minimal, deterministic** reproduction of a pnpm bug where `pnpm install` and
-`pnpm dedupe`, run on the **same** edited workspace, produce **different**
+`pnpm dedupe`, run on the **same** edited project, produce **different**
 `pnpm-lock.yaml` files — specifically, `install` spuriously propagates an
 **optional** transitive peer dependency (`supports-color`, the optional peer of
 `debug`) onto packages that are completely unrelated to the edit.
@@ -18,28 +18,17 @@ Reproduces with the current **`pnpm@11.9.0`**.
 
 ## Repro Steps
 
-The workspace is two packages with three real npm dependencies:
+The project is a single package with three real npm dependencies:
 
-packages/main/package.json
+package.json
 
 ```jsonc
 {
-  "name": "@repro/main",
+  "name": "playground-pnpm-lockfile-drift-bug",
   "dependencies": {
     "nodemon": "3.1.0",
     "simple-git": "3.36.0",
-    "@repro/extra": "workspace:*"
-  }
-}
-```
-
-packages/extra/package.json
-
-```jsonc
-{
-  "name": "@repro/extra",
-  "dependencies": {
-    "chalk": "2.4.2"
+    "tiny-invariant": "1.3.3"
   }
 }
 ```
@@ -94,8 +83,8 @@ so it is where the optional peer is legitimately bound. `simple-git` is an
 
 `./scripts/reproduce.sh` runs these steps for you:
 
-**1. Remove the unrelated dependency** — delete the `"@repro/extra": "workspace:*"`
-line from `packages/main/package.json`.
+**1. Remove the unrelated dependency** — delete the `"tiny-invariant": "1.3.3"`
+line from `package.json`.
 
 **2. Install.** `simple-git` wrongly gains a `(supports-color@5.5.0)` suffix:
 
@@ -113,7 +102,7 @@ grep -c 'supports-color@5.5.0)' pnpm-lock.yaml   # back to 4
 grep 'simple-git@3.36.0(' pnpm-lock.yaml         # (nothing — plain again)
 ```
 
-Removing `@repro/extra` has nothing to do with `simple-git`, yet `pnpm install`
+Removing `tiny-invariant` has nothing to do with `simple-git`, yet `pnpm install`
 suffixes it and `pnpm dedupe` does not. That disagreement is the bug. (Without the
 edit, `pnpm install` changes nothing — the lockfile is a fixed point; only the edit
 triggers the drift, exactly the office-bohemia symptom.)
@@ -196,7 +185,7 @@ stable but the two produce different lockfiles from the same input.
 
 | path | purpose |
 | --- | --- |
-| `packages/main`, `packages/extra` | the two-package workspace |
+| `package.json` | the single-package manifest (three real deps) |
 | `canonical/pnpm-lock.yaml` | the committed, `dedupe`-stable reference lockfile |
 | `pnpm-lock.yaml` | working copy (kept equal to the canonical reference) |
 | `scripts/reproduce.sh` | runs the install-vs-dedupe comparison end to end |

@@ -18,35 +18,17 @@ https://github.com/astegmaier/playground-pnpm-lockfile-drift-bug
 
 ### Reproduction steps
 
-A two-package workspace with three real npm dependencies.
+A single-package project with three real npm dependencies.
 
-#### `pnpm-workspace.yaml`
-
-```yaml
-packages:
-  - 'packages/*'
-```
-
-#### `packages/main/package.json`
+#### `package.json`
 
 ```json
 {
-  "name": "@repro/main",
+  "name": "playground-pnpm-lockfile-drift-bug",
   "dependencies": {
     "nodemon": "3.1.0",
     "simple-git": "3.36.0",
-    "@repro/extra": "workspace:*"
-  }
-}
-```
-
-#### `packages/extra/package.json`
-
-```json
-{
-  "name": "@repro/extra",
-  "dependencies": {
-    "chalk": "2.4.2"
+    "tiny-invariant": "1.3.3"
   }
 }
 ```
@@ -63,19 +45,16 @@ packages:
 }
 ```
 
-`supports-color@5.5.0` is provided by two packages in the graph:
+`supports-color@5.5.0` is provided in the graph by `nodemon@3.1.0`, which depends on **both** `debug` and `supports-color@5.5.0`, so its `debug` legitimately binds the optional peer (`debug@4.4.3(supports-color@5.5.0)`).
 
-- `nodemon@3.1.0` depends on **both** `debug` and `supports-color@5.5.0`, so its `debug` legitimately binds the optional peer (`debug@4.4.3(supports-color@5.5.0)`).
-- `chalk@2.4.2` (reached only via `@repro/extra`) also depends on `supports-color@5.5.0`.
-
-`simple-git@3.36.0` (and its dependency `@kwsites/file-exists`) are ordinary `debug` consumers, completely unrelated to `@repro/extra`.
+`simple-git@3.36.0` (and its dependency `@kwsites/file-exists`) are ordinary `debug` consumers, completely unrelated to `tiny-invariant`. `tiny-invariant@1.3.3` is a dependency-free package with no relationship to `debug` or `supports-color`.
 
 #### Steps
 
 The committed `pnpm-lock.yaml` is `pnpm dedupe`-stable. Then:
 
 1. `pnpm install` — no change (the lockfile is a fixed point; `simple-git` is plain).
-2. Remove the `"@repro/extra": "workspace:*"` line from `packages/main/package.json`.
+2. Remove the `"tiny-invariant": "1.3.3"` line from `package.json`.
 3. `pnpm install` — `simple-git` (unrelated to the edit) **gains** a `(supports-color@5.5.0)` suffix.
 4. `pnpm dedupe` — the suffix is **removed** again.
 
@@ -85,7 +64,7 @@ The committed `pnpm-lock.yaml` is `pnpm dedupe`-stable. Then:
 
 ```yaml
 importers:
-  packages/main:
+  .:
     dependencies:
       simple-git:
         specifier: 3.36.0
@@ -105,7 +84,7 @@ snapshots:
 
 ```yaml
 importers:
-  packages/main:
+  .:
     dependencies:
       simple-git:
         specifier: 3.36.0
@@ -123,7 +102,7 @@ snapshots:
 
 ### Describe the Bug
 
-`pnpm install` and `pnpm dedupe` produce **different** lockfiles from the same workspace. Removing one dependency (`@repro/extra`) that has nothing to do with `simple-git` and running `pnpm install` propagates the optional `supports-color` peer onto `simple-git` and `@kwsites/file-exists` — they gain a `(supports-color@5.5.0)` suffix and a second snapshot. `pnpm dedupe` on the identical input does not. In `simple-git`'s snapshot, `supports-color` stays a `transitivePeerDependency` either way; `install` additionally hoists it into the package's own peer suffix, where `dedupe` keeps it absorbed.
+`pnpm install` and `pnpm dedupe` produce **different** lockfiles from the same project. Removing one dependency (`tiny-invariant`) that has nothing to do with `simple-git` and running `pnpm install` propagates the optional `supports-color` peer onto `simple-git` and `@kwsites/file-exists` — they gain a `(supports-color@5.5.0)` suffix and a second snapshot. `pnpm dedupe` on the identical input does not. In `simple-git`'s snapshot, `supports-color` stays a `transitivePeerDependency` either way; `install` additionally hoists it into the package's own peer suffix, where `dedupe` keeps it absorbed.
 
 The drift is **deterministic** (not a timing race) and surfaces only on re-resolution: a no-edit `pnpm install` reproduces the committed lockfile with 0 churn, so both forms are install fixed points — but any manifest edit forces `install` to re-propagate the optional peer. The practical consequence is that a committed, `pnpm dedupe`-stable lockfile **cannot be maintained with `pnpm install` alone**: every manifest edit re-introduces optional-peer churn on unrelated packages (in a large monorepo this was ~130 packages / hundreds of lines), and only a follow-up `pnpm dedupe` removes it.
 
