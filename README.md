@@ -126,6 +126,58 @@ Same code path, same fix.
 
 ---
 
+## Regression history (version bisection)
+
+This bug is a **regression introduced in `pnpm@11.5.2`**. It is not present in any
+earlier release; every version from `11.5.2` through the current `11.9.0` reproduces it.
+
+Method: for each version the `packageManager` field was pinned (corepack), then
+`scripts/test-version.sh` restored the canonical lockfile, removed `tiny-invariant`,
+ran `pnpm install` then `pnpm dedupe`, and counted `supports-color@5.5.0)` suffix
+positions. "Reproduced" = `install` yields **5**, `dedupe` yields **3**;
+"clean" = both yield **3**. A binary search over the lockfile-v9 range
+(`9.0.0` … `11.9.0`) located the boundary:
+
+| pnpm version | install | dedupe | result |
+| --- | --- | --- | --- |
+| 9.0.0 | 3 | 3 | ✅ clean |
+| 10.0.0 | 3 | 3 | ✅ clean |
+| 11.0.0 | 3 | 3 | ✅ clean |
+| 11.5.0 | 3 | 3 | ✅ clean |
+| **11.5.1** | 3 | 3 | ✅ clean (last good) |
+| **11.5.2** | 5 | 3 | ❌ **reproduced (first bad)** |
+| 11.5.3 | — | — | (bracketed by 11.5.2 / 11.6.0) |
+| 11.6.0 | 5 | 3 | ❌ reproduced |
+| 11.7.0 | 5 | 3 | ❌ reproduced |
+| 11.9.0 | 5 | 3 | ❌ reproduced |
+
+> Note: the bisection is scoped to the **lockfile-v9** era (`pnpm@9.0.0`+). Older
+> releases (`pnpm@8` and below) write a different lockfile format, so the
+> `supports-color@5.5.0)` suffix count is not comparable and they were not tested.
+
+### Introducing change
+
+The regression was introduced by pnpm
+**[PR #12083](https://github.com/pnpm/pnpm/pull/12083) — *"fix(deps-resolver): prefer
+locked peer contexts during resolution by default"*** (commit
+[`1c73e8303c`](https://github.com/pnpm/pnpm/commit/1c73e8303c6eefca27e9803b94e8c063eb32cfa8),
+merged 2026-06-02, first shipped in `pnpm@11.5.2`). It is the only peer-resolver
+change in the `v11.5.1..v11.5.2` commit range and is the first bullet of the
+[`pnpm@11.5.2` release notes](https://github.com/pnpm/pnpm/releases/tag/v11.5.2):
+
+> *Peer dependency resolution now reuses the peer contexts already recorded in the
+> lockfile when those providers are still present in the dependency graph and still
+> satisfy the peer ranges.*
+
+The PR's own summary: *"When a lockfile already records multiple valid peer contexts,
+pnpm keeps those contexts instead of collapsing them into one compatible context."*
+That lockfile-peer-context reuse is exactly the "reuse the previous lockfile's
+per-package `dependencies` / `optionalDependencies` blocks" behavior described under
+[Root cause](#root-cause) — for an *optional* peer it re-propagates the provider onto
+additional consumers, which `pnpm dedupe` (which forgets those blocks first) does not.
+
+---
+
 ## Practical consequence
 
 A committed `pnpm dedupe`-stable lockfile cannot be maintained with `pnpm install`
