@@ -1,18 +1,18 @@
 # pnpm `install`-vs-`dedupe` optional-peer lockfile drift
 
-A **minimal, deterministic** reproduction of a pnpm bug where `pnpm install` and
-`pnpm dedupe`, run on the **same** edited project, produce **different**
-`pnpm-lock.yaml` files — specifically, `install` spuriously propagates an
-**optional** transitive peer dependency (`supports-color`, the optional peer of
-`debug`) onto packages that are completely unrelated to the edit.
+A **minimal, deterministic** reproduction of
+**[pnpm/pnpm#12756](https://github.com/pnpm/pnpm/issues/12756)**, where `pnpm install`
+and `pnpm dedupe`, run on the **same** edited project, produce **different**
+`pnpm-lock.yaml` files — `install` spuriously propagates an **optional** transitive peer
+(`supports-color`, the optional peer of `debug`) onto packages unrelated to the edit.
 
-This is the small-scale, faithful version of the lockfile churn seen in the
-a large monorepo at Microsoft, where removing a single internal
-library from two manifests and running `pnpm install`
-rewrote **417 lockfile lines** — 134 unrelated packages gaining a
+This is the small-scale version of lockfile churn seen in a large monorepo at
+Microsoft, where removing one internal library from two manifests and running
+`pnpm install` rewrote **417 lockfile lines** — 134 unrelated packages gaining a
 `(supports-color@5.5.0)` suffix — that `pnpm dedupe` would not have produced.
 
-Reproduces with the current **`pnpm@11.9.0`**.
+Reproduces with the current **`pnpm@11.9.0`**; it is a regression introduced in
+`pnpm@11.5.2` (see [Regression history](#regression-history-version-bisection)).
 
 ---
 
