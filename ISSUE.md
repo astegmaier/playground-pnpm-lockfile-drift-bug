@@ -12,7 +12,7 @@
 
 Minimal reproduction: https://github.com/astegmaier/playground-pnpm-lockfile-drift-bug
 
-A tiny pnpm workspace with two packages, `a` and `b` (the root `package.json` is empty). Every `dependencies` / `peerDependencies` edge between the packages — solid arrows are `dependencies` (labelled with the version range), the dashed arrow is `debug`'s **optional** `supports-color` peer:
+A tiny pnpm workspace with two packages, `a` and `b`, with the following dependency graph:
 
 ```mermaid
 flowchart TD
@@ -40,29 +40,25 @@ Steps:
 1. Remove the `"tiny-invariant": "1.3.3"` dependency from `a/package.json`.
 2. Run `pnpm install`. Now the lockfile snapshot for `agent-base` has a **peer suffix**:
 
-    ```yaml
-      agent-base@6.0.2(supports-color@5.5.0): ## <-- BUG: the peer suffix is incorrectly added
-        dependencies:
-          debug: 4.4.3(supports-color@5.5.0)
-        transitivePeerDependencies:
-          - supports-color
-    ```
-
-3. Run `pnpm dedupe` — the suffix is (correctly) **removed** again.
-
-`./scripts/reproduce.sh` in the repro runs these steps end to end.
-
 ### Expected behavior
 
-`pnpm install` should produce the same lockfile as `pnpm dedupe` for the same input — and, in particular, should not add a peer suffix to packages that are unrelated to the edit. A committed `pnpm dedupe`-stable lockfile should stay stable across `pnpm install` after manifest edits, instead of re-propagating optional peers that `pnpm dedupe` then removes.
-
-This is how it worked before the regression: on 11.5.1 and earlier, `pnpm install` and `pnpm dedupe` agree, and removing `tiny-invariant` leaves `agent-base` untouched.
+`pnpm install` should make the minimal lockfile changes necessary to reflect the removal of `tiny-invariant`.
 
 ### Actual behavior
 
-`pnpm install` and `pnpm dedupe` produce **different** lockfiles from the same project. Removing one dependency (`tiny-invariant`) that has nothing to do with `agent-base` and running `pnpm install` propagates the optional `supports-color` peer onto `agent-base` — it gains a `(supports-color@5.5.0)` suffix and a second snapshot. `pnpm dedupe` on the identical input does not. In `agent-base`'s snapshot, `supports-color` stays a `transitivePeerDependency` either way; `install` additionally hoists it into the package's own peer suffix, where `dedupe` keeps it absorbed.
+`pnpm install` adds a peer suffix to `agent-base` that is unrelated to the edit. Running `pnpm dedupe` _after_ `pnpm install` will clean up these extra suffixes.
 
-The drift is **deterministic** (not a timing race) and surfaces only on re-resolution: a no-edit `pnpm install` reproduces the committed lockfile with 0 churn, so both forms are install fixed points — but any manifest edit forces `install` to re-propagate the optional peer. The practical consequence is that a committed, `pnpm dedupe`-stable lockfile **cannot be maintained with `pnpm install` alone**: every manifest edit re-introduces optional-peer churn on unrelated packages (in a large monorepo this was ~130 packages / hundreds of lines), and only a follow-up `pnpm dedupe` removes it.
+```yaml
+  agent-base@6.0.2(supports-color@5.5.0): ## <-- BUG: the peer suffix is incorrectly added
+    dependencies:
+      debug: 4.4.3(supports-color@5.5.0)
+    transitivePeerDependencies:
+      - supports-color
+```
+
+This seems like a small problem in this reproduction, but in our real-life monorepo, this causes hundreds of unnnecessary lockfile edits on every manifest change. 
+
+The issue can be worked around with `pnpm dedupe`, but we're having difficulty using `pnpm dedupe` in CI because of performance issues (it takes ~5 minutes to run).
 
 ### Additional information
 
