@@ -38,7 +38,7 @@ The lockfile produced for this monorepo by the initial `pnpm install` has a snap
 Steps:
 
 1. Remove the `"tiny-invariant": "1.3.3"` dependency from `a/package.json`.
-2. Run `pnpm install`. Now the lockfile snapshot for `agent-base` has a **peer suffix**:
+2. Run `pnpm install`.
 
 ### Expected behavior
 
