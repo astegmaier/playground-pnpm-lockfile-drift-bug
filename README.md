@@ -61,7 +61,7 @@ grep 'agent-base@6.0.2(' pnpm-lock.yaml          # (nothing — plain again)
 Removing `tiny-invariant` has nothing to do with `agent-base`, yet `pnpm install`
 suffixes it and `pnpm dedupe` does not. That disagreement is the bug. (Without the
 edit, `pnpm install` changes nothing — the lockfile is a fixed point; only the edit
-triggers the drift, exactly the office-bohemia symptom.)
+triggers the drift, exactly the real-world symptom.)
 
 ---
 
@@ -91,7 +91,7 @@ The two relevant pieces of pnpm source (paths relative to the pnpm repo,
    The preserved `optionalDependencies` (the bound `supports-color`) make the
    provider visible to additional `debug` occurrences during the re-resolution,
    so they bind the optional peer too → the suffix propagates onto unrelated
-   `debug` consumers (`agent-base` here, and in office-bohemia
+   `debug` consumers (`agent-base` here, and in the real monorepo
    `jest-environment-jsdom`, `jsdom`, `webpack-dev-server`, `madge`, `spdy`, …).
 
 2. **`deps-installer/src/install/index.ts`** — `pnpm dedupe` sets `dedupe: true`,
@@ -121,7 +121,7 @@ collapses the drift exactly:
 | `pnpm install` with `currentResolvedDependencies` forced `undefined` | **3** |
 | `pnpm dedupe` | 3 |
 
-The identical experiment in office-bohemia gives **200 → 66** (and `dedupe` → 66).
+The identical experiment in the large monorepo gives **200 → 66** (and `dedupe` → 66).
 Same code path, same fix.
 
 ---
