@@ -7,7 +7,7 @@
 # adds a spurious `(supports-color@5.5.0)` suffix to `agent-base`. `pnpm dedupe`
 # then removes it again — proving `install` and `dedupe` disagree.
 #
-# Usage:  ./scripts/reproduce.sh           # uses package.json `packageManager` (pnpm@11.9.0) via corepack
+# Usage:  ./scripts/reproduce.sh           # uses package.json `packageManager` (pnpm@11.10.0) via corepack
 #         PM="pd" ./scripts/reproduce.sh   # use a custom pnpm binary (e.g. a local fork build)
 set -uo pipefail
 cd "$(dirname "$0")/.."

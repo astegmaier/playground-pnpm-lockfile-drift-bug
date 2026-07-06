@@ -11,7 +11,7 @@ Microsoft, where removing one internal library from two manifests and running
 `pnpm install` rewrote **417 lockfile lines** — 134 unrelated packages gaining a
 `(supports-color@5.5.0)` suffix — that `pnpm dedupe` would not have produced.
 
-Reproduces with the current **`pnpm@11.9.0`**; it is a regression introduced in
+Reproduces with the current **`pnpm@11.10.0`**; it is a regression introduced in
 `pnpm@11.5.2` (see [Regression history](#regression-history-version-bisection)).
 
 ---
@@ -129,14 +129,14 @@ Same code path, same fix.
 ## Regression history (version bisection)
 
 This bug is a **regression introduced in `pnpm@11.5.2`**. It is not present in any
-earlier release; every version from `11.5.2` through the current `11.9.0` reproduces it.
+earlier release; every version from `11.5.2` through the current `11.10.0` reproduces it.
 
 Method: for each version the `packageManager` field was pinned (corepack), then
 `scripts/test-version.sh` restored the canonical lockfile, removed `tiny-invariant`,
 ran `pnpm install` then `pnpm dedupe`, and counted `supports-color@5.5.0)` suffix
 positions. "Reproduced" = `install` yields **5**, `dedupe` yields **3**;
 "clean" = both yield **3**. A binary search over the lockfile-v9 range
-(`9.0.0` … `11.9.0`) located the boundary:
+(`9.0.0` … `11.10.0`) located the boundary:
 
 | pnpm version | install | dedupe | result |
 | --- | --- | --- | --- |
@@ -150,6 +150,7 @@ positions. "Reproduced" = `install` yields **5**, `dedupe` yields **3**;
 | 11.6.0 | 5 | 3 | ❌ reproduced |
 | 11.7.0 | 5 | 3 | ❌ reproduced |
 | 11.9.0 | 5 | 3 | ❌ reproduced |
+| 11.10.0 | 5 | 3 | ❌ reproduced |
 
 > Note: the bisection is scoped to the **lockfile-v9** era (`pnpm@9.0.0`+). Older
 > releases (`pnpm@8` and below) write a different lockfile format, so the
@@ -208,4 +209,4 @@ stable but the two produce different lockfiles from the same input.
   exists (that snapshot is a registry-package snapshot regardless of its parent).
 - `node_modules/` is git-ignored.
 - `PM="pd" ./scripts/reproduce.sh` runs the repro against a custom pnpm binary
-  (e.g. a different pnpm build) instead of the pinned `pnpm@11.9.0`.
+  (e.g. a different pnpm build) instead of the pinned `pnpm@11.10.0`.
