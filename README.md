@@ -1,5 +1,14 @@
 # pnpm `install`-vs-`dedupe` optional-peer lockfile drift
 
+> **✅ Fixed in `pnpm@11.15.0`** by
+> **[pnpm/pnpm#13120](https://github.com/pnpm/pnpm/pull/13120) — *"feat(peers): hoist
+> optional peers implied by peerDependenciesMeta"*** (commit
+> [`6156ffdac8`](https://github.com/pnpm/pnpm/commit/6156ffdac864f15455120b8b9dd0f71cd478abec)).
+> `pnpm install` and `pnpm dedupe` now agree. Note the disagreement is resolved by making
+> **both** commands *propagate* the implied optional peer (the suffix count converges on
+> **5**, not the old `dedupe`-stable **3**) — so a previously `dedupe`-stable baseline
+> re-drifts upward and should be re-generated.
+
 A **minimal, deterministic** reproduction of
 **[pnpm/pnpm#12756](https://github.com/pnpm/pnpm/issues/12756)**, where `pnpm install`
 and `pnpm dedupe`, run on the **same** edited project, produce **different**
